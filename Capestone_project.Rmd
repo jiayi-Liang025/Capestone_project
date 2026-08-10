@@ -15,3 +15,59 @@ library(factoextra)
 library(ggrepel)
 library(GGally)
 ```
+1.2.Grab data
+
+```{r}
+gse <- getGEO("GSE163151")
+
+```
+1.3 Grab metadata
+
+```{r}
+
+metadata <- pData(gse$GSE163151_series_matrix.txt.gz)
+
+```
+
+1.4
+```{r}
+
+metadata <- metadata |>  
+  select(
+    "title"
+  ) |>
+  separate(
+    title,
+    into = c("condition", "sample_id"),
+    sep = "_",
+    extra = "merge"
+  )
+metadata$count_id <- sub(
+  "_S[0-9]+_L00([0-9]+)$",
+  "_\\1",
+  metadata$sample_id
+)
+head(metadata)
+
+
+```
+
+1.5
+```{r}
+list.files("GSE163151/samples", full.names = TRUE)
+
+counts_list <- list.files("GSE163151/samples", pattern = "*.txt.gz", full.names = T) %>%
+  set_names(., basename(.) %>% str_remove("_counts.txt.gz")) %>%
+  map(read.delim, header=T, row.names=1)
+
+counts <- do.call(cbind, counts_list)
+
+dim(counts)
+
+```
+1.6
+```{r}
+metadata$count_id ==colnames(counts)
+
+
+```
