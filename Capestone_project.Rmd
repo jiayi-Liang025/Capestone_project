@@ -3,7 +3,8 @@ title: "Untitlgyvuged"
 output: html_document
 ---
 
-1. Dataset preparations
+1.  Dataset preparations
+
 ```{r}
 library(GEOquery)
 library(tidyverse)
@@ -12,29 +13,41 @@ library(factoextra)
 library(ggrepel)
 library(GGally)
 ```
+
 1.1 Load GEO data
+
 ```{r}
 gse <- getGEO("GSE163151")
 ```
+
 1.2 Extract metadata
+
 ```{r}
 metadata <- pData(gse$GSE163151_series_matrix.txt.gz)
 ```
+
 1.3 Check metadata structure
+
 ```{r}
 dim(metadata)
 colnames(metadata)
 head(metadata)
 ```
+
 1.4 Check sample titles
+
 ```{r}
 head(metadata$title, 20)
 ```
+
 1.5 Check sample type
+
 ```{r}
 table(metadata$source_name_ch1)
 ```
+
 1.6 Find all characteristics columns
+
 ```{r}
 char_cols <- grep(
   "characteristics_ch1",
@@ -44,14 +57,18 @@ char_cols <- grep(
 
 char_cols
 ```
+
 1.7 Print unique values in each characteristics column
+
 ```{r}
 for(col in char_cols){
   cat("\n---", col, "---\n")
   print(unique(metadata[[col]]))
 }
 ```
-2. Metadata preparation
+
+2.  Metadata preparation
+
 ```{r}
 metadata_clean <- metadata |>
   transmute(
@@ -83,7 +100,9 @@ metadata_clean <- metadata |>
 
 head(metadata_clean)
 ```
+
 2.1 Check separated sample names
+
 ```{r}
 head(
   metadata_clean |>
@@ -94,7 +113,9 @@ head(
     )
 )
 ```
+
 2.2 Create analysis groups
+
 ```{r}
 metadata_np <- metadata_clean |>
   filter(sample_type == "NP swab") |>
@@ -115,7 +136,9 @@ table(
   metadata_np$pathogen
 )
 ```
-3. Main comparison metadata
+
+3.  Main comparison metadata
+
 ```{r}
 metadata_main <- metadata_np |>
   filter(
@@ -124,7 +147,9 @@ metadata_main <- metadata_np |>
 
 table(metadata_main$analysis_group)
 ```
+
 3.1 Check main comparison metadata
+
 ```{r}
 head(metadata_main)
 
@@ -133,14 +158,18 @@ table(
   metadata_main$pathogen
 )
 ```
-4. Download supplementary files
+
+4.  Download supplementary files
+
 ```{r}
 getGEOSuppFiles(
   "GSE163151",
   makeDirectory = TRUE
 )
 ```
+
 4.1 Check downloaded files
+
 ```{r}
 list.files(
   "GSE163151",
@@ -148,7 +177,9 @@ list.files(
   full.names = TRUE
 )
 ```
+
 4.2 Check tar files
+
 ```{r}
 tar_files <- list.files(
   "GSE163151",
@@ -159,7 +190,9 @@ tar_files <- list.files(
 
 tar_files
 ```
+
 4.3 Extract tar files
+
 ```{r}
 for(f in tar_files){
   untar(
@@ -168,7 +201,9 @@ for(f in tar_files){
   )
 }
 ```
+
 4.4 Find count files
+
 ```{r}
 count_files <- list.files(
   "GSE163151",
@@ -180,7 +215,9 @@ count_files <- list.files(
 head(count_files, 20)
 length(count_files)
 ```
+
 4.5 Read count files
+
 ```{r}
 counts_list <- count_files |>
   set_names(
@@ -197,7 +234,9 @@ counts_list <- count_files |>
     )
   )
 ```
+
 4.6 Check count files
+
 ```{r}
 ncols <- map_int(counts_list, ncol)
 
@@ -205,13 +244,17 @@ table(ncols)
 
 names(counts_list)[ncols != 1]
 ```
+
 4.7 Remove invalid count file
+
 ```{r}
 counts_list <- counts_list[ncols == 1]
 
 length(counts_list)
 ```
+
 4.8 Combine count files
+
 ```{r}
 counts <- do.call(
   cbind,
@@ -223,13 +266,17 @@ colnames(counts) <- names(counts_list)
 dim(counts)
 head(counts)
 ```
+
 4.9 Check sample matching
+
 ```{r}
 table(
   metadata_main$sample_name %in% colnames(counts)
 )
 ```
+
 4.10 Keep main comparison samples
+
 ```{r}
 metadata_main <- metadata_main |>
   filter(
@@ -242,14 +289,18 @@ counts_main <- counts[
   drop = FALSE
 ]
 ```
+
 4.11 Make order of samples match
+
 ```{r}
 all(
   metadata_main$sample_name ==
     colnames(counts_main)
 )
 ```
+
 4.12 Check final data
+
 ```{r}
 dim(metadata_main)
 
@@ -259,7 +310,9 @@ head(metadata_main)
 
 head(counts_main)
 ```
+
 4.13 Check raw counts
+
 ```{r}
 all(
   counts_main == round(counts_main)
@@ -269,7 +322,9 @@ all(
   counts_main >= 0
 )
 ```
-5. Filter low-expression genes
+
+5.  Filter low-expression genes
+
 ```{r}
 keep <- rowSums(counts_main >= 10) >= 10
 
@@ -279,19 +334,25 @@ counts_filtered <- counts_main[keep, ]
 
 dim(counts_filtered)
 ```
+
 5.1 Check library size
+
 ```{r}
 library_size <- colSums(counts_filtered)
 
 summary(library_size)
 ```
+
 5.2 Add library size to metadata
+
 ```{r}
 metadata_main$library_size <- library_size
 
 head(metadata_main)
 ```
+
 5.3 Plot library size
+
 ```{r}
 ggplot(
   metadata_main,
@@ -311,7 +372,9 @@ ggplot(
     y = "Library size"
   )
 ```
+
 5.4 Check number of detected genes per sample
+
 ```{r}
 detected_genes <- colSums(counts_filtered > 0)
 
@@ -319,7 +382,9 @@ metadata_main$detected_genes <- detected_genes
 
 summary(detected_genes)
 ```
+
 5.5 Plot detected genes
+
 ```{r}
 ggplot(
   metadata_main,
@@ -339,11 +404,15 @@ ggplot(
     y = "Detected genes"
   )
 ```
-6. DESeq2 preparation
+
+6.  DESeq2 preparation
+
 ```{r}
 library(DESeq2)
 ```
+
 6.1 Set row names of metadata
+
 ```{r}
 rownames(metadata_main) <- metadata_main$sample_name
 
@@ -352,7 +421,9 @@ all(
     colnames(counts_filtered)
 )
 ```
+
 6.2 Set analysis group
+
 ```{r}
 metadata_main$analysis_group <- factor(
   metadata_main$analysis_group,
@@ -361,7 +432,9 @@ metadata_main$analysis_group <- factor(
 
 table(metadata_main$analysis_group)
 ```
+
 6.3 Create DESeq2 dataset
+
 ```{r}
 dds <- DESeqDataSetFromMatrix(
   countData = counts_filtered,
@@ -371,7 +444,9 @@ dds <- DESeqDataSetFromMatrix(
 
 dds
 ```
+
 6.4 Normalize counts
+
 ```{r}
 dds <- estimateSizeFactors(dds)
 
@@ -383,7 +458,9 @@ normalized_counts <- counts(
 dim(normalized_counts)
 head(normalized_counts)
 ```
+
 6.5 Variance stabilizing transformation
+
 ```{r}
 vsd <- vst(
   dds,
@@ -392,7 +469,9 @@ vsd <- vst(
 
 vsd
 ```
+
 6.6 PCA
+
 ```{r}
 pca_data <- plotPCA(
   vsd,
@@ -404,7 +483,9 @@ percent_var <- round(
   100 * attr(pca_data, "percentVar")
 )
 ```
+
 6.7 Plot PCA
+
 ```{r}
 ggplot(
   pca_data,
@@ -434,7 +515,9 @@ ggplot(
   ) +
   theme_classic()
 ```
+
 6.8 PCA with sample labels
+
 ```{r}
 ggplot(
   pca_data,
@@ -469,7 +552,9 @@ ggplot(
   ) +
   theme_classic()
 ```
+
 6.9 Check low-depth samples
+
 ```{r}
 metadata_main |>
   arrange(library_size) |>
@@ -482,7 +567,9 @@ metadata_main |>
   ) |>
   head(20)
 ```
+
 6.10 Check highest-depth samples
+
 ```{r}
 metadata_main |>
   arrange(desc(library_size)) |>
@@ -495,7 +582,9 @@ metadata_main |>
   ) |>
   head(20)
 ```
+
 6.11 Sample correlation
+
 ```{r}
 sample_cor <- cor(
   assay(vsd)
@@ -503,7 +592,9 @@ sample_cor <- cor(
 
 dim(sample_cor)
 ```
+
 6.12 Sample correlation heatmap
+
 ```{r}
 Heatmap(
   sample_cor,
@@ -512,7 +603,9 @@ Heatmap(
   show_column_names = FALSE
 )
 ```
+
 6.13 Find most variable genes
+
 ```{r}
 gene_variance <- apply(
   assay(vsd),
@@ -527,7 +620,9 @@ top_genes <- names(
   )
 )[1:50]
 ```
+
 6.14 Heatmap of most variable genes
+
 ```{r}
 Heatmap(
   assay(vsd)[top_genes, ],
@@ -537,7 +632,9 @@ Heatmap(
   cluster_columns = TRUE
 )
 ```
+
 6.15 Prepare COVID-19 vs Healthy metadata
+
 ```{r}
 metadata_covid_healthy <- metadata_np |>
   filter(
@@ -547,13 +644,17 @@ metadata_covid_healthy <- metadata_np |>
     )
   )
 ```
+
 6.16 Check COVID-19 vs Healthy groups
+
 ```{r}
 table(
   metadata_covid_healthy$analysis_group
 )
 ```
+
 6.17 Keep matching count samples
+
 ```{r}
 metadata_covid_healthy <- metadata_covid_healthy |>
   filter(
@@ -566,14 +667,18 @@ counts_covid_healthy <- counts[
   drop = FALSE
 ]
 ```
+
 6.18 Check sample order
+
 ```{r}
 all(
   metadata_covid_healthy$sample_name ==
     colnames(counts_covid_healthy)
 )
 ```
+
 6.19 Filter low-expression genes
+
 ```{r}
 keep_covid_healthy <- rowSums(
   counts_covid_healthy >= 10
@@ -588,7 +693,9 @@ dim(
   counts_covid_healthy_filtered
 )
 ```
+
 7.0 Match metadata rownames with count columns
+
 ```{r}
 rownames(metadata_covid_healthy) <- metadata_covid_healthy$sample_name
 
@@ -597,7 +704,9 @@ all(
     colnames(counts_covid_healthy_filtered)
 )
 ```
+
 7.1 Create DESeq2 dataset
+
 ```{r}
 dds_covid_healthy <- DESeqDataSetFromMatrix(
   countData = counts_covid_healthy_filtered,
@@ -607,13 +716,17 @@ dds_covid_healthy <- DESeqDataSetFromMatrix(
 
 dds_covid_healthy
 ```
+
 7.2 Run DESeq2
+
 ```{r}
 dds_covid_healthy <- DESeq(
   dds_covid_healthy
 )
 ```
+
 7.3 Extract DEG results
+
 ```{r}
 res_covid_healthy <- results(
   dds_covid_healthy,
@@ -626,7 +739,9 @@ res_covid_healthy <- results(
 
 res_covid_healthy
 ```
+
 7.4 Convert results to dataframe
+
 ```{r}
 deg_covid_healthy <- as.data.frame(
   res_covid_healthy
@@ -635,7 +750,9 @@ deg_covid_healthy <- as.data.frame(
 
 head(deg_covid_healthy)
 ```
+
 7.5 Remove NA values
+
 ```{r}
 deg_covid_healthy <- deg_covid_healthy |>
   filter(
@@ -644,7 +761,9 @@ deg_covid_healthy <- deg_covid_healthy |>
 
 dim(deg_covid_healthy)
 ```
+
 7.6 Significant DEGs
+
 ```{r}
 deg_sig <- deg_covid_healthy |>
   filter(
@@ -654,7 +773,9 @@ deg_sig <- deg_covid_healthy |>
 
 dim(deg_sig)
 ```
+
 7.7 Count upregulated and downregulated genes
+
 ```{r}
 deg_sig |>
   mutate(
@@ -665,7 +786,9 @@ deg_sig |>
   ) |>
   dplyr::count(direction)
 ```
+
 7.8 Top DEGs
+
 ```{r}
 deg_sig |>
   arrange(padj) |>
@@ -678,14 +801,18 @@ deg_sig |>
   ) |>
   head(20)
 ```
+
 7.9 MA plot
+
 ```{r}
 plotMA(
   res_covid_healthy,
   ylim = c(-5, 5)
 )
 ```
+
 7.10 Prepare volcano plot data
+
 ```{r}
 deg_covid_healthy <- deg_covid_healthy |>
   mutate(
@@ -696,7 +823,9 @@ deg_covid_healthy <- deg_covid_healthy |>
     )
   )
 ```
+
 7.11 Volcano plot
+
 ```{r}
 ggplot(
   deg_covid_healthy,
@@ -727,20 +856,25 @@ ggplot(
 ```
 
 7.12 Select top DEGs for heatmap
+
 ```{r}
 top_deg_genes <- deg_sig |>
   arrange(padj) |>
   slice_head(n = 50) |>
   pull(gene)
 ```
+
 7.13 VST for COVID-19 vs Healthy
+
 ```{r}
 vsd_covid_healthy <- vst(
   dds_covid_healthy,
   blind = FALSE
 )
 ```
+
 7.14 DEG heatmap
+
 ```{r}
 Heatmap(
   assay(vsd_covid_healthy)[top_deg_genes, ],
@@ -750,7 +884,9 @@ Heatmap(
   cluster_columns = TRUE
 )
 ```
+
 7.15 Save DEG results
+
 ```{r}
 write.csv(
   deg_covid_healthy,
@@ -764,7 +900,9 @@ write.csv(
   row.names = FALSE
 )
 ```
+
 7.16 Save normalized counts
+
 ```{r}
 normalized_covid_healthy <- counts(
   dds_covid_healthy,
@@ -776,11 +914,601 @@ write.csv(
   "COVID19_vs_Healthy_normalized_counts.csv"
 )
 ```
+
 7.17 Save metadata
+
 ```{r}
 write.csv(
   metadata_covid_healthy,
   "COVID19_vs_Healthy_metadata.csv",
   row.names = FALSE
 )
+```
+
+# 8. Additional Differential-Expression Analyses
+
+```{r}
+dir.create(
+  "results/differential_expression",
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+dir.create(
+  "results/signatures",
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+dir.create(
+  "results/enrichment",
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+dir.create(
+  "results/drug_repurposing",
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+dir.create(
+  "figures/differential_expression",
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+dir.create(
+  "figures/enrichment",
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+```
+
+8.1 created a reusable DESeq2 function
+
+```{r}
+run_deseq_comparison <- function(
+  count_matrix,
+  metadata,
+  group_1,
+  group_2,
+  comparison_name
+) {
+  
+  # Select samples from the two requested groups
+  metadata_sub <- metadata |>
+    filter(
+      analysis_group %in% c(group_1, group_2)
+    )
+  
+  # Keep samples that have count data
+  metadata_sub <- metadata_sub |>
+    filter(
+      sample_name %in% colnames(count_matrix)
+    )
+  
+  # Set group_2 as the reference group
+  metadata_sub$analysis_group <- factor(
+    metadata_sub$analysis_group,
+    levels = c(group_2, group_1)
+  )
+  
+  # Match count columns to metadata order
+  count_sub <- count_matrix[
+    ,
+    metadata_sub$sample_name,
+    drop = FALSE
+  ]
+  
+  rownames(metadata_sub) <- metadata_sub$sample_name
+  
+  # Verify sample order
+  stopifnot(
+    identical(
+      rownames(metadata_sub),
+      colnames(count_sub)
+    )
+  )
+  
+  # Ensure counts are integers
+  count_sub <- as.matrix(count_sub)
+  storage.mode(count_sub) <- "integer"
+  
+  # Filter low-expression genes
+  keep <- rowSums(count_sub >= 10) >= 10
+  count_filtered <- count_sub[keep, , drop = FALSE]
+  
+  # Create DESeq2 object
+  dds <- DESeqDataSetFromMatrix(
+    countData = count_filtered,
+    colData = metadata_sub,
+    design = ~ analysis_group
+  )
+  
+  # Run DESeq2
+  dds <- DESeq(dds)
+  
+  # Extract results: group_1 relative to group_2
+  res <- results(
+    dds,
+    contrast = c(
+      "analysis_group",
+      group_1,
+      group_2
+    ),
+    alpha = 0.05
+  )
+  
+  # Convert to dataframe
+  result_table <- as.data.frame(res) |>
+    rownames_to_column("gene") |>
+    filter(!is.na(padj)) |>
+    mutate(
+      direction = case_when(
+        padj < 0.05 & log2FoldChange >= 1 ~ "Up",
+        padj < 0.05 & log2FoldChange <= -1 ~ "Down",
+        TRUE ~ "Not significant"
+      ),
+      comparison = comparison_name
+    ) |>
+    arrange(padj)
+  
+  # Significant genes
+  significant_table <- result_table |>
+    filter(
+      padj < 0.05,
+      abs(log2FoldChange) >= 1
+    )
+  
+  # Save tables
+  write.csv(
+    result_table,
+    file.path(
+      "results/differential_expression",
+      paste0(comparison_name, "_all_genes.csv")
+    ),
+    row.names = FALSE
+  )
+  
+  write.csv(
+    significant_table,
+    file.path(
+      "results/differential_expression",
+      paste0(comparison_name, "_significant_genes.csv")
+    ),
+    row.names = FALSE
+  )
+  
+  # Create volcano plot
+  volcano_plot <- ggplot(
+    result_table,
+    aes(
+      x = log2FoldChange,
+      y = -log10(padj),
+      color = direction
+    )
+  ) +
+    geom_point(
+      alpha = 0.6,
+      size = 1.3
+    ) +
+    geom_vline(
+      xintercept = c(-1, 1),
+      linetype = "dashed"
+    ) +
+    geom_hline(
+      yintercept = -log10(0.05),
+      linetype = "dashed"
+    ) +
+    scale_color_manual(
+      values = c(
+        "Up" = "#D73027",
+        "Down" = "#4575B4",
+        "Not significant" = "grey70"
+      )
+    ) +
+    theme_classic() +
+    labs(
+      title = comparison_name,
+      x = paste0(
+        "log2 fold change: ",
+        group_1,
+        " relative to ",
+        group_2
+      ),
+      y = "-log10 adjusted p-value",
+      color = NULL
+    )
+  
+  ggsave(
+    filename = file.path(
+      "figures/differential_expression",
+      paste0(comparison_name, "_volcano.png")
+    ),
+    plot = volcano_plot,
+    width = 8,
+    height = 6,
+    dpi = 300
+  )
+  
+  # Return all important objects
+  list(
+    dds = dds,
+    metadata = metadata_sub,
+    counts = count_filtered,
+    results = result_table,
+    significant = significant_table,
+    volcano = volcano_plot
+  )
+}
+```
+8.2 run all comparision
+```{r}
+covid_vs_healthy <- run_deseq_comparison(
+  count_matrix = counts,
+  metadata = metadata_np,
+  group_1 = "COVID-19",
+  group_2 = "Healthy",
+  comparison_name = "COVID19_vs_Healthy"
+)
+
+virus_vs_healthy <- run_deseq_comparison(
+  count_matrix = counts,
+  metadata = metadata_np,
+  group_1 = "Other Virus",
+  group_2 = "Healthy",
+  comparison_name = "OtherVirus_vs_Healthy"
+)
+
+covid_vs_virus <- run_deseq_comparison(
+  count_matrix = counts,
+  metadata = metadata_np,
+  group_1 = "COVID-19",
+  group_2 = "Other Virus",
+  comparison_name = "COVID19_vs_OtherVirus"
+)
+```
+8.3 check the results
+```{r}
+comparison_summary <- tibble(
+  comparison = c(
+    "COVID-19 vs Healthy",
+    "Other Virus vs Healthy",
+    "COVID-19 vs Other Virus"
+  ),
+  
+  tested_genes = c(
+    nrow(covid_vs_healthy$results),
+    nrow(virus_vs_healthy$results),
+    nrow(covid_vs_virus$results)
+  ),
+  
+  significant_genes = c(
+    nrow(covid_vs_healthy$significant),
+    nrow(virus_vs_healthy$significant),
+    nrow(covid_vs_virus$significant)
+  ),
+  
+  upregulated = c(
+    sum(covid_vs_healthy$significant$direction == "Up"),
+    sum(virus_vs_healthy$significant$direction == "Up"),
+    sum(covid_vs_virus$significant$direction == "Up")
+  ),
+  
+  downregulated = c(
+    sum(covid_vs_healthy$significant$direction == "Down"),
+    sum(virus_vs_healthy$significant$direction == "Down"),
+    sum(covid_vs_virus$significant$direction == "Down")
+  )
+)
+
+comparison_summary
+
+write.csv(
+  comparison_summary,
+  "results/differential_expression/comparison_summary.csv",
+  row.names = FALSE
+)
+```
+
+```{r}
+covid_vs_healthy$volcano
+virus_vs_healthy$volcano
+covid_vs_virus$volcano
+```
+## Save volcano plots
+
+```{r}
+dir.create(
+  "figures/differential_expression",
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+```
+
+9. Shared Viral Responses
+9.1 Combine the two disease-versus-healthy comparisons
+```{r}
+shared_comparison <- covid_vs_healthy$results |>
+  select(
+    gene,
+    covid_log2FC = log2FoldChange,
+    covid_padj = padj,
+    covid_direction = direction
+  ) |>
+  inner_join(
+    virus_vs_healthy$results |>
+      select(
+        gene,
+        virus_log2FC = log2FoldChange,
+        virus_padj = padj,
+        virus_direction = direction
+      ),
+    by = "gene"
+  )
+```
+9.2 Identify shared genes
+```{r}
+shared_viral_genes <- shared_comparison |>
+  filter(
+    covid_padj < 0.05,
+    virus_padj < 0.05,
+    abs(covid_log2FC) >= 1,
+    abs(virus_log2FC) >= 1,
+    sign(covid_log2FC) == sign(virus_log2FC)
+  ) |>
+  mutate(
+    shared_direction = if_else(
+      covid_log2FC > 0,
+      "Shared Up",
+      "Shared Down"
+    )
+  ) |>
+  arrange(
+    shared_direction,
+    covid_padj
+  )
+
+table(shared_viral_genes$shared_direction)
+
+write.csv(
+  shared_viral_genes,
+  "results/signatures/shared_viral_response_genes.csv",
+  row.names = FALSE
+)
+```
+9.3 Compare effect sizes
+```{r}
+fold_change_plot <- ggplot(
+  shared_comparison,
+  aes(
+    x = virus_log2FC,
+    y = covid_log2FC
+  )
+) +
+  geom_hline(
+    yintercept = 0,
+    color = "grey70"
+  ) +
+  geom_vline(
+    xintercept = 0,
+    color = "grey70"
+  ) +
+  geom_abline(
+    slope = 1,
+    intercept = 0,
+    linetype = "dashed"
+  ) +
+  geom_point(
+    alpha = 0.35,
+    size = 1
+  ) +
+  geom_point(
+    data = shared_viral_genes,
+    aes(
+      x = virus_log2FC,
+      y = covid_log2FC,
+      color = shared_direction
+    ),
+    size = 1.5
+  ) +
+  scale_color_manual(
+    values = c(
+      "Shared Up" = "#D73027",
+      "Shared Down" = "#4575B4"
+    )
+  ) +
+  theme_classic() +
+  labs(
+    title = "Shared host responses to COVID-19 and other viruses",
+    x = "Other Virus vs Healthy log2 fold change",
+    y = "COVID-19 vs Healthy log2 fold change",
+    color = NULL
+  )
+
+fold_change_plot
+
+ggsave(
+  "figures/differential_expression/shared_effect_size_plot.png",
+  fold_change_plot,
+  width = 8,
+  height = 7,
+  dpi = 300
+)
+```
+
+10. COVID-19-Associated Genes
+```{r}
+covid_associated_genes <- covid_vs_healthy$results |>
+  select(
+    gene,
+    covid_healthy_log2FC = log2FoldChange,
+    covid_healthy_padj = padj
+  ) |>
+  inner_join(
+    covid_vs_virus$results |>
+      select(
+        gene,
+        covid_virus_log2FC = log2FoldChange,
+        covid_virus_padj = padj
+      ),
+    by = "gene"
+  ) |>
+  filter(
+    covid_healthy_padj < 0.05,
+    covid_virus_padj < 0.05,
+    abs(covid_healthy_log2FC) >= 1,
+    abs(covid_virus_log2FC) >= 1
+  ) |>
+  mutate(
+    direction = if_else(
+      covid_healthy_log2FC > 0,
+      "Higher in COVID-19",
+      "Lower in COVID-19"
+    )
+  ) |>
+  arrange(covid_virus_padj)
+
+table(covid_associated_genes$direction)
+
+write.csv(
+  covid_associated_genes,
+  "results/signatures/COVID19_associated_genes.csv",
+  row.names = FALSE
+)
+```
+11. GO Over-Representation Analysis
+```{r}
+if (!requireNamespace("BiocManager", quietly = TRUE)) {
+  install.packages("BiocManager")
+}
+
+BiocManager::install(
+  c(
+    "clusterProfiler",
+    "org.Hs.eg.db",
+    "enrichplot"
+  )
+)
+```
+```{r}
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(enrichplot)
+```
+
+11.1 Create an enrichment function
+```{r}
+run_go_enrichment <- function(
+  significant_table,
+  result_table,
+  comparison_name
+) {
+  
+  background_genes <- unique(result_table$gene)
+  
+  up_genes <- significant_table |>
+    filter(direction == "Up") |>
+    pull(gene) |>
+    unique()
+  
+  down_genes <- significant_table |>
+    filter(direction == "Down") |>
+    pull(gene) |>
+    unique()
+  
+  go_up <- enrichGO(
+    gene = up_genes,
+    universe = background_genes,
+    OrgDb = org.Hs.eg.db,
+    keyType = "SYMBOL",
+    ont = "BP",
+    pAdjustMethod = "BH",
+    pvalueCutoff = 0.05,
+    qvalueCutoff = 0.05,
+    readable = TRUE
+  )
+  
+  go_down <- enrichGO(
+    gene = down_genes,
+    universe = background_genes,
+    OrgDb = org.Hs.eg.db,
+    keyType = "SYMBOL",
+    ont = "BP",
+    pAdjustMethod = "BH",
+    pvalueCutoff = 0.05,
+    qvalueCutoff = 0.05,
+    readable = TRUE
+  )
+  
+  write.csv(
+    as.data.frame(go_up),
+    file.path(
+      "results/enrichment",
+      paste0(comparison_name, "_GO_up.csv")
+    ),
+    row.names = FALSE
+  )
+  
+  write.csv(
+    as.data.frame(go_down),
+    file.path(
+      "results/enrichment",
+      paste0(comparison_name, "_GO_down.csv")
+    ),
+    row.names = FALSE
+  )
+  
+  list(
+    up = go_up,
+    down = go_down
+  )
+}
+```
+11.2 Run GO enrichment
+```{r}
+go_covid_healthy <- run_go_enrichment(
+  covid_vs_healthy$significant,
+  covid_vs_healthy$results,
+  "COVID19_vs_Healthy"
+)
+
+go_virus_healthy <- run_go_enrichment(
+  virus_vs_healthy$significant,
+  virus_vs_healthy$results,
+  "OtherVirus_vs_Healthy"
+)
+
+go_covid_virus <- run_go_enrichment(
+  covid_vs_virus$significant,
+  covid_vs_virus$results,
+  "COVID19_vs_OtherVirus"
+)
+```
+11.3 Plot enriched pathways
+```{r}
+dotplot(
+  go_covid_healthy$up,
+  showCategory = 15
+) +
+  ggtitle("COVID-19 vs Healthy: Upregulated pathways")
+
+dotplot(
+  go_covid_healthy$down,
+  showCategory = 15
+) +
+  ggtitle("COVID-19 vs Healthy: Downregulated pathways")
+
+dotplot(
+  go_covid_virus$up,
+  showCategory = 15
+) +
+  ggtitle("COVID-19 vs Other Virus: Upregulated pathways")
+
+dotplot(
+  go_covid_virus$down,
+  showCategory = 15
+) +
+  ggtitle("COVID-19 vs Other Virus: Downregulated pathways")
 ```
