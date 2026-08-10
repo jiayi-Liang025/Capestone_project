@@ -38,15 +38,11 @@ metadata <- metadata |>
   ) |>
   separate(
     title,
-    into = c("condition", "sample_id"),
-    sep = "_",
+    into = c("method", "sample_id"),
+    sep = "-",
     extra = "merge"
-  )
-metadata$count_id <- sub(
-  "_S[0-9]+_L00([0-9]+)$",
-  "_\\1",
-  metadata$sample_id
 )
+
 head(metadata)
 
 
@@ -54,15 +50,25 @@ head(metadata)
 
 1.5
 ```{r}
-list.files("GSE163151/samples", full.names = TRUE)
+count_files <- list.files("./samples", pattern = "\\.gz$", full.names = TRUE, recursive = TRUE)
 
-counts_list <- list.files("GSE163151/samples", pattern = "*.txt.gz", full.names = T) %>%
-  set_names(., basename(.) %>% str_remove("_counts.txt.gz")) %>%
-  map(read.delim, header=T, row.names=1)
+count_matrix_list <- map(count_files, function(file_path){
+  df <- read.delim(file_path, header = TRUE, row.names = 1, check.names = FALSE)
 
-counts <- do.call(cbind, counts_list)
+  df[,1, drop = FALSE]
+}) %>% 
 
-dim(counts)
+  set_names(
+    basename(count_files) %>% 
+      str_remove("_counts.txt.gz")
+  )
+
+counts_merged <- do.call(cbind, count_matrix_list)
+
+dim(counts_merged)
+head(rownames(counts_merged))
+head(colnames(counts_merged))
+
 
 ```
 1.6
