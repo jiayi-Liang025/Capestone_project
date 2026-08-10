@@ -750,3 +750,37 @@ Heatmap(
   cluster_columns = TRUE
 )
 ```
+7.15 Save DEG results
+```{r}
+write.csv(
+  deg_covid_healthy,
+  "COVID19_vs_Healthy_all_DEGs.csv",
+  row.names = FALSE
+)
+
+write.csv(
+  deg_sig,
+  "COVID19_vs_Healthy_significant_DEGs.csv",
+  row.names = FALSE
+)
+```
+7.16 Save normalized counts
+```{r}
+normalized_covid_healthy <- counts(
+  dds_covid_healthy,
+  normalized = TRUE
+)
+
+write.csv(
+  normalized_covid_healthy,
+  "COVID19_vs_Healthy_normalized_counts.csv"
+)
+```
+7.17 Save metadata
+```{r}
+write.csv(
+  metadata_covid_healthy,
+  "COVID19_vs_Healthy_metadata.csv",
+  row.names = FALSE
+)
+```
