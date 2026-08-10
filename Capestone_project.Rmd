@@ -3,3 +3,15 @@ title: "Capestone_project"
 output: html_document
 ---
 
+dataset： GSE163151
+
+## **1.Dataset preparations**
+
+```{r}
+library(GEOquery)
+library(tidyverse)
+library(ComplexHeatmap)
+library(factoextra)
+library(ggrepel)
+library(GGally)
+```
