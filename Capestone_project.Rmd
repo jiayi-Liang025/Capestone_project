@@ -3,6 +3,7 @@ title: "Untitlgyvuged"
 output: html_document
 ---
 
+1. Dataset preparations
 ```{r}
 library(GEOquery)
 library(tidyverse)
@@ -11,35 +12,29 @@ library(factoextra)
 library(ggrepel)
 library(GGally)
 ```
-
-# 1.1 Load GEO data
+1.1 Load GEO data
 ```{r}
 gse <- getGEO("GSE163151")
 ```
-
-# 1.2 Extract metadata
+1.2 Extract metadata
 ```{r}
 metadata <- pData(gse$GSE163151_series_matrix.txt.gz)
 ```
-
-# 1.3 Check metadata structure
+1.3 Check metadata structure
 ```{r}
 dim(metadata)
 colnames(metadata)
 head(metadata)
 ```
-
-# 1.4 Check sample titles
+1.4 Check sample titles
 ```{r}
 head(metadata$title, 20)
 ```
-
-# 1.5 Check sample type
+1.5 Check sample type
 ```{r}
 table(metadata$source_name_ch1)
 ```
-
-# 1.6 Find all characteristics columns
+1.6 Find all characteristics columns
 ```{r}
 char_cols <- grep(
   "characteristics_ch1",
@@ -49,18 +44,709 @@ char_cols <- grep(
 
 char_cols
 ```
-
-# 1.7 
+1.7 Print unique values in each characteristics column
 ```{r}
-condition_table <- metadata |>  
+for(col in char_cols){
+  cat("\n---", col, "---\n")
+  print(unique(metadata[[col]]))
+}
+```
+2. Metadata preparation
+```{r}
+metadata_clean <- metadata |>
+  transmute(
+    geo_accession = geo_accession,
+    sample_name = title,
+    sample_type = source_name_ch1,
+
+    disease_group = str_remove(
+      characteristics_ch1.1,
+      "^disease state: "
+    ),
+
+    pathogen = str_remove(
+      characteristics_ch1.2,
+      "^pathogen: "
+    ),
+
+    severity = str_remove(
+      characteristics_ch1.4,
+      "^disease severity: "
+    )
+  ) |>
   separate(
-    title,
-    into = c("condition", "sample_id"),
+    sample_name,
+    into = c("sample_prefix", "sample_number"),
     sep = "-",
-    extra = "merge"
+    remove = FALSE
   )
 
-condition_table$condition
+head(metadata_clean)
+```
+2.1 Check separated sample names
+```{r}
+head(
+  metadata_clean |>
+    select(
+      sample_name,
+      sample_prefix,
+      sample_number
+    )
+)
+```
+2.2 Create analysis groups
+```{r}
+metadata_np <- metadata_clean |>
+  filter(sample_type == "NP swab") |>
+  mutate(
+    analysis_group = case_when(
+      disease_group == "COVID-19" ~ "COVID-19",
+      disease_group == "Viral acute respiratory illness" ~ "Other Virus",
+      disease_group == "Donor control" ~ "Healthy",
+      disease_group == "Non-viral acute respiratory illness" ~ "Nonviral",
+      TRUE ~ "Exclude"
+    )
+  )
 
+table(metadata_np$analysis_group)
 
+table(
+  metadata_np$analysis_group,
+  metadata_np$pathogen
+)
+```
+3. Main comparison metadata
+```{r}
+metadata_main <- metadata_np |>
+  filter(
+    analysis_group %in% c("COVID-19", "Other Virus")
+  )
+
+table(metadata_main$analysis_group)
+```
+3.1 Check main comparison metadata
+```{r}
+head(metadata_main)
+
+table(
+  metadata_main$analysis_group,
+  metadata_main$pathogen
+)
+```
+4. Download supplementary files
+```{r}
+getGEOSuppFiles(
+  "GSE163151",
+  makeDirectory = TRUE
+)
+```
+4.1 Check downloaded files
+```{r}
+list.files(
+  "GSE163151",
+  recursive = TRUE,
+  full.names = TRUE
+)
+```
+4.2 Check tar files
+```{r}
+tar_files <- list.files(
+  "GSE163151",
+  pattern = "\\.tar$",
+  recursive = TRUE,
+  full.names = TRUE
+)
+
+tar_files
+```
+4.3 Extract tar files
+```{r}
+for(f in tar_files){
+  untar(
+    f,
+    exdir = "GSE163151/samples"
+  )
+}
+```
+4.4 Find count files
+```{r}
+count_files <- list.files(
+  "GSE163151",
+  pattern = "_counts\\.txt\\.gz$",
+  recursive = TRUE,
+  full.names = TRUE
+)
+
+head(count_files, 20)
+length(count_files)
+```
+4.5 Read count files
+```{r}
+counts_list <- count_files |>
+  set_names(
+    basename(count_files) |>
+      str_remove("^GSM[0-9]+_") |>
+      str_remove("_counts\\.txt\\.gz$")
+  ) |>
+  map(
+    ~ read.delim(
+      .x,
+      header = TRUE,
+      row.names = 1,
+      check.names = FALSE
+    )
+  )
+```
+4.6 Check count files
+```{r}
+ncols <- map_int(counts_list, ncol)
+
+table(ncols)
+
+names(counts_list)[ncols != 1]
+```
+4.7 Remove invalid count file
+```{r}
+counts_list <- counts_list[ncols == 1]
+
+length(counts_list)
+```
+4.8 Combine count files
+```{r}
+counts <- do.call(
+  cbind,
+  counts_list
+)
+
+colnames(counts) <- names(counts_list)
+
+dim(counts)
+head(counts)
+```
+4.9 Check sample matching
+```{r}
+table(
+  metadata_main$sample_name %in% colnames(counts)
+)
+```
+4.10 Keep main comparison samples
+```{r}
+metadata_main <- metadata_main |>
+  filter(
+    sample_name %in% colnames(counts)
+  )
+
+counts_main <- counts[
+  ,
+  metadata_main$sample_name,
+  drop = FALSE
+]
+```
+4.11 Make order of samples match
+```{r}
+all(
+  metadata_main$sample_name ==
+    colnames(counts_main)
+)
+```
+4.12 Check final data
+```{r}
+dim(metadata_main)
+
+dim(counts_main)
+
+head(metadata_main)
+
+head(counts_main)
+```
+4.13 Check raw counts
+```{r}
+all(
+  counts_main == round(counts_main)
+)
+
+all(
+  counts_main >= 0
+)
+```
+5. Filter low-expression genes
+```{r}
+keep <- rowSums(counts_main >= 10) >= 10
+
+table(keep)
+
+counts_filtered <- counts_main[keep, ]
+
+dim(counts_filtered)
+```
+5.1 Check library size
+```{r}
+library_size <- colSums(counts_filtered)
+
+summary(library_size)
+```
+5.2 Add library size to metadata
+```{r}
+metadata_main$library_size <- library_size
+
+head(metadata_main)
+```
+5.3 Plot library size
+```{r}
+ggplot(
+  metadata_main,
+  aes(
+    x = analysis_group,
+    y = library_size
+  )
+) +
+  geom_boxplot() +
+  geom_jitter(
+    width = 0.2,
+    alpha = 0.5
+  ) +
+  theme_classic() +
+  labs(
+    x = "Group",
+    y = "Library size"
+  )
+```
+5.4 Check number of detected genes per sample
+```{r}
+detected_genes <- colSums(counts_filtered > 0)
+
+metadata_main$detected_genes <- detected_genes
+
+summary(detected_genes)
+```
+5.5 Plot detected genes
+```{r}
+ggplot(
+  metadata_main,
+  aes(
+    x = analysis_group,
+    y = detected_genes
+  )
+) +
+  geom_boxplot() +
+  geom_jitter(
+    width = 0.2,
+    alpha = 0.5
+  ) +
+  theme_classic() +
+  labs(
+    x = "Group",
+    y = "Detected genes"
+  )
+```
+6. DESeq2 preparation
+```{r}
+library(DESeq2)
+```
+6.1 Set row names of metadata
+```{r}
+rownames(metadata_main) <- metadata_main$sample_name
+
+all(
+  rownames(metadata_main) ==
+    colnames(counts_filtered)
+)
+```
+6.2 Set analysis group
+```{r}
+metadata_main$analysis_group <- factor(
+  metadata_main$analysis_group,
+  levels = c("Other Virus", "COVID-19")
+)
+
+table(metadata_main$analysis_group)
+```
+6.3 Create DESeq2 dataset
+```{r}
+dds <- DESeqDataSetFromMatrix(
+  countData = counts_filtered,
+  colData = metadata_main,
+  design = ~ analysis_group
+)
+
+dds
+```
+6.4 Normalize counts
+```{r}
+dds <- estimateSizeFactors(dds)
+
+normalized_counts <- counts(
+  dds,
+  normalized = TRUE
+)
+
+dim(normalized_counts)
+head(normalized_counts)
+```
+6.5 Variance stabilizing transformation
+```{r}
+vsd <- vst(
+  dds,
+  blind = TRUE
+)
+
+vsd
+```
+6.6 PCA
+```{r}
+pca_data <- plotPCA(
+  vsd,
+  intgroup = "analysis_group",
+  returnData = TRUE
+)
+
+percent_var <- round(
+  100 * attr(pca_data, "percentVar")
+)
+```
+6.7 Plot PCA
+```{r}
+ggplot(
+  pca_data,
+  aes(
+    x = PC1,
+    y = PC2,
+    color = analysis_group
+  )
+) +
+  geom_point(
+    size = 3,
+    alpha = 0.7
+  ) +
+  xlab(
+    paste0(
+      "PC1: ",
+      percent_var[1],
+      "% variance"
+    )
+  ) +
+  ylab(
+    paste0(
+      "PC2: ",
+      percent_var[2],
+      "% variance"
+    )
+  ) +
+  theme_classic()
+```
+6.8 PCA with sample labels
+```{r}
+ggplot(
+  pca_data,
+  aes(
+    x = PC1,
+    y = PC2,
+    color = analysis_group,
+    label = name
+  )
+) +
+  geom_point(
+    size = 3,
+    alpha = 0.7
+  ) +
+  geom_text_repel(
+    size = 2,
+    max.overlaps = 20
+  ) +
+  xlab(
+    paste0(
+      "PC1: ",
+      percent_var[1],
+      "% variance"
+    )
+  ) +
+  ylab(
+    paste0(
+      "PC2: ",
+      percent_var[2],
+      "% variance"
+    )
+  ) +
+  theme_classic()
+```
+6.9 Check low-depth samples
+```{r}
+metadata_main |>
+  arrange(library_size) |>
+  select(
+    sample_name,
+    analysis_group,
+    pathogen,
+    library_size,
+    detected_genes
+  ) |>
+  head(20)
+```
+6.10 Check highest-depth samples
+```{r}
+metadata_main |>
+  arrange(desc(library_size)) |>
+  select(
+    sample_name,
+    analysis_group,
+    pathogen,
+    library_size,
+    detected_genes
+  ) |>
+  head(20)
+```
+6.11 Sample correlation
+```{r}
+sample_cor <- cor(
+  assay(vsd)
+)
+
+dim(sample_cor)
+```
+6.12 Sample correlation heatmap
+```{r}
+Heatmap(
+  sample_cor,
+  name = "Correlation",
+  show_row_names = FALSE,
+  show_column_names = FALSE
+)
+```
+6.13 Find most variable genes
+```{r}
+gene_variance <- apply(
+  assay(vsd),
+  1,
+  var
+)
+
+top_genes <- names(
+  sort(
+    gene_variance,
+    decreasing = TRUE
+  )
+)[1:50]
+```
+6.14 Heatmap of most variable genes
+```{r}
+Heatmap(
+  assay(vsd)[top_genes, ],
+  name = "Expression",
+  show_column_names = FALSE,
+  cluster_rows = TRUE,
+  cluster_columns = TRUE
+)
+```
+6.15 Prepare COVID-19 vs Healthy metadata
+```{r}
+metadata_covid_healthy <- metadata_np |>
+  filter(
+    analysis_group %in% c(
+      "COVID-19",
+      "Healthy"
+    )
+  )
+```
+6.16 Check COVID-19 vs Healthy groups
+```{r}
+table(
+  metadata_covid_healthy$analysis_group
+)
+```
+6.17 Keep matching count samples
+```{r}
+metadata_covid_healthy <- metadata_covid_healthy |>
+  filter(
+    sample_name %in% colnames(counts)
+  )
+
+counts_covid_healthy <- counts[
+  ,
+  metadata_covid_healthy$sample_name,
+  drop = FALSE
+]
+```
+6.18 Check sample order
+```{r}
+all(
+  metadata_covid_healthy$sample_name ==
+    colnames(counts_covid_healthy)
+)
+```
+6.19 Filter low-expression genes
+```{r}
+keep_covid_healthy <- rowSums(
+  counts_covid_healthy >= 10
+) >= 10
+
+counts_covid_healthy_filtered <-
+  counts_covid_healthy[
+    keep_covid_healthy,
+  ]
+
+dim(
+  counts_covid_healthy_filtered
+)
+```
+7.0 Match metadata rownames with count columns
+```{r}
+rownames(metadata_covid_healthy) <- metadata_covid_healthy$sample_name
+
+all(
+  rownames(metadata_covid_healthy) ==
+    colnames(counts_covid_healthy_filtered)
+)
+```
+7.1 Create DESeq2 dataset
+```{r}
+dds_covid_healthy <- DESeqDataSetFromMatrix(
+  countData = counts_covid_healthy_filtered,
+  colData = metadata_covid_healthy,
+  design = ~ analysis_group
+)
+
+dds_covid_healthy
+```
+7.2 Run DESeq2
+```{r}
+dds_covid_healthy <- DESeq(
+  dds_covid_healthy
+)
+```
+7.3 Extract DEG results
+```{r}
+res_covid_healthy <- results(
+  dds_covid_healthy,
+  contrast = c(
+    "analysis_group",
+    "COVID-19",
+    "Healthy"
+  )
+)
+
+res_covid_healthy
+```
+7.4 Convert results to dataframe
+```{r}
+deg_covid_healthy <- as.data.frame(
+  res_covid_healthy
+) |>
+  rownames_to_column("gene")
+
+head(deg_covid_healthy)
+```
+7.5 Remove NA values
+```{r}
+deg_covid_healthy <- deg_covid_healthy |>
+  filter(
+    !is.na(padj)
+  )
+
+dim(deg_covid_healthy)
+```
+7.6 Significant DEGs
+```{r}
+deg_sig <- deg_covid_healthy |>
+  filter(
+    padj < 0.05,
+    abs(log2FoldChange) >= 1
+  )
+
+dim(deg_sig)
+```
+7.7 Count upregulated and downregulated genes
+```{r}
+deg_sig |>
+  mutate(
+    direction = case_when(
+      log2FoldChange >= 1 ~ "Up",
+      log2FoldChange <= -1 ~ "Down"
+    )
+  ) |>
+  dplyr::count(direction)
+```
+7.8 Top DEGs
+```{r}
+deg_sig |>
+  arrange(padj) |>
+  select(
+    gene,
+    baseMean,
+    log2FoldChange,
+    pvalue,
+    padj
+  ) |>
+  head(20)
+```
+7.9 MA plot
+```{r}
+plotMA(
+  res_covid_healthy,
+  ylim = c(-5, 5)
+)
+```
+7.10 Prepare volcano plot data
+```{r}
+deg_covid_healthy <- deg_covid_healthy |>
+  mutate(
+    significance = case_when(
+      padj < 0.05 & log2FoldChange >= 1 ~ "Up",
+      padj < 0.05 & log2FoldChange <= -1 ~ "Down",
+      TRUE ~ "Not significant"
+    )
+  )
+```
+7.11 Volcano plot
+```{r}
+ggplot(
+  deg_covid_healthy,
+  aes(
+    x = log2FoldChange,
+    y = -log10(padj),
+    color = significance
+  )
+) +
+  geom_point(
+    alpha = 0.6,
+    size = 1.5
+  ) +
+  geom_vline(
+    xintercept = c(-1, 1),
+    linetype = "dashed"
+  ) +
+  geom_hline(
+    yintercept = -log10(0.05),
+    linetype = "dashed"
+  ) +
+  theme_classic() +
+  labs(
+    x = "log2 Fold Change",
+    y = "-log10 adjusted p-value",
+    color = "Significance"
+  )
+```
+
+7.12 Select top DEGs for heatmap
+```{r}
+top_deg_genes <- deg_sig |>
+  arrange(padj) |>
+  slice_head(n = 50) |>
+  pull(gene)
+```
+7.13 VST for COVID-19 vs Healthy
+```{r}
+vsd_covid_healthy <- vst(
+  dds_covid_healthy,
+  blind = FALSE
+)
+```
+7.14 DEG heatmap
+```{r}
+Heatmap(
+  assay(vsd_covid_healthy)[top_deg_genes, ],
+  name = "Expression",
+  show_column_names = FALSE,
+  cluster_rows = TRUE,
+  cluster_columns = TRUE
+)
 ```
