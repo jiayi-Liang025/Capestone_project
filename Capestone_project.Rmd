@@ -1,5 +1,5 @@
 ---
-title: "Untitlgyvuged"
+title: "capstone project"
 output: html_document
 ---
 
@@ -1511,4 +1511,697 @@ dotplot(
   showCategory = 15
 ) +
   ggtitle("COVID-19 vs Other Virus: Downregulated pathways")
+```
+
+12. Additional Downstream Analysis
+
+12.1 Build GO gene sets directly from Section 11 objects
+
+```{r}
+extract_enriched_genes <- function(enrich_result) {
+  df <- as.data.frame(enrich_result)
+
+  if (nrow(df) == 0 || !"geneID" %in% colnames(df)) {
+    return(character(0))
+  }
+
+  genes <- unlist(
+    strsplit(
+      df$geneID[!is.na(df$geneID)],
+      split = "/"
+    )
+  )
+
+  unique(trimws(genes))
+}
+
+gene_sets <- list(
+  COVID19_vs_Healthy_GO_up = extract_enriched_genes(
+    go_covid_healthy$up
+  ),
+  COVID19_vs_Healthy_GO_down = extract_enriched_genes(
+    go_covid_healthy$down
+  ),
+  COVID19_vs_OtherVirus_GO_up = extract_enriched_genes(
+    go_covid_virus$up
+  ),
+  COVID19_vs_OtherVirus_GO_down = extract_enriched_genes(
+    go_covid_virus$down
+  ),
+  OtherVirus_vs_Healthy_GO_up = extract_enriched_genes(
+    go_virus_healthy$up
+  ),
+  OtherVirus_vs_Healthy_GO_down = extract_enriched_genes(
+    go_virus_healthy$down
+  )
+)
+
+sapply(gene_sets, length)
+```
+
+12.2 Summarize GO gene sets and calculate overlaps
+
+```{r}
+dir.create(
+  "results/gene_sets",
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+gene_summary <- data.frame(
+  Gene_Set = names(gene_sets),
+  Unique_Genes = sapply(gene_sets, length)
+)
+
+gene_summary
+
+write.csv(
+  gene_summary,
+  "results/gene_sets/gene_set_summary.csv",
+  row.names = FALSE
+)
+
+overlap_matrix <- outer(
+  names(gene_sets),
+  names(gene_sets),
+  Vectorize(function(a, b) {
+    length(
+      intersect(
+        gene_sets[[a]],
+        gene_sets[[b]]
+      )
+    )
+  })
+)
+
+rownames(overlap_matrix) <- names(gene_sets)
+colnames(overlap_matrix) <- names(gene_sets)
+
+overlap_matrix
+```
+
+12.3 Jaccard similarity of GO gene sets
+
+```{r}
+jaccard_matrix <- matrix(
+  0,
+  nrow = length(gene_sets),
+  ncol = length(gene_sets)
+)
+
+rownames(jaccard_matrix) <- names(gene_sets)
+colnames(jaccard_matrix) <- names(gene_sets)
+
+for (i in seq_along(gene_sets)) {
+  for (j in seq_along(gene_sets)) {
+
+    intersection_n <- length(
+      intersect(
+        gene_sets[[i]],
+        gene_sets[[j]]
+      )
+    )
+
+    union_n <- length(
+      union(
+        gene_sets[[i]],
+        gene_sets[[j]]
+      )
+    )
+
+    jaccard_matrix[i, j] <- ifelse(
+      union_n == 0,
+      NA,
+      intersection_n / union_n
+    )
+  }
+}
+
+round(jaccard_matrix, 3)
+```
+
+12.4 Prepare log2 fold-change matrix from Section 8 results
+
+```{r}
+fc_all <- covid_vs_healthy$results |>
+  dplyr::select(
+    gene,
+    COVID19_vs_Healthy = log2FoldChange
+  ) |>
+  dplyr::inner_join(
+    covid_vs_virus$results |>
+      dplyr::select(
+        gene,
+        COVID19_vs_OtherVirus = log2FoldChange
+      ),
+    by = "gene"
+  ) |>
+  dplyr::inner_join(
+    virus_vs_healthy$results |>
+      dplyr::select(
+        gene,
+        OtherVirus_vs_Healthy = log2FoldChange
+      ),
+    by = "gene"
+  )
+
+cat(
+  "Number of shared tested genes:",
+  nrow(fc_all),
+  "\n"
+)
+
+head(fc_all)
+```
+
+12.5 Correlation of gene-expression signatures
+
+```{r}
+fc_matrix <- fc_all |>
+  dplyr::select(
+    COVID19_vs_Healthy,
+    COVID19_vs_OtherVirus,
+    OtherVirus_vs_Healthy
+  )
+
+cor_pearson <- cor(
+  fc_matrix,
+  method = "pearson",
+  use = "pairwise.complete.obs"
+)
+
+cor_spearman <- cor(
+  fc_matrix,
+  method = "spearman",
+  use = "pairwise.complete.obs"
+)
+
+cat("===== Pearson correlation =====\n")
+print(round(cor_pearson, 3))
+
+cat("\n===== Spearman correlation =====\n")
+print(round(cor_spearman, 3))
+```
+
+12.6 Correlation heatmap
+
+```{r}
+cor_df <- as.data.frame(
+  as.table(cor_spearman)
+)
+
+colnames(cor_df) <- c(
+  "Comparison1",
+  "Comparison2",
+  "Correlation"
+)
+
+correlation_heatmap <- ggplot(
+  cor_df,
+  aes(
+    x = Comparison1,
+    y = Comparison2,
+    fill = Correlation
+  )
+) +
+  geom_tile(
+    color = "white"
+  ) +
+  geom_text(
+    aes(
+      label = sprintf(
+        "%.2f",
+        Correlation
+      )
+    ),
+    size = 5
+  ) +
+  scale_fill_gradient2(
+    low = "blue",
+    mid = "white",
+    high = "red",
+    midpoint = 0,
+    limits = c(-1, 1)
+  ) +
+  coord_fixed() +
+  theme_minimal(
+    base_size = 12
+  ) +
+  theme(
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 1
+    ),
+    panel.grid = element_blank()
+  ) +
+  labs(
+    title = "Spearman Correlation of Gene Expression Signatures",
+    x = NULL,
+    y = NULL,
+    fill = "Spearman r"
+  )
+
+correlation_heatmap
+```
+
+12.7 Define significant DEG sets directly from Section 8 results
+
+```{r}
+genes_COVID_H <- unique(
+  covid_vs_healthy$significant$gene
+)
+
+genes_COVID_OV <- unique(
+  covid_vs_virus$significant$gene
+)
+
+genes_OV_H <- unique(
+  virus_vs_healthy$significant$gene
+)
+
+cat(
+  "Significant COVID19 vs Healthy:",
+  length(genes_COVID_H),
+  "\n"
+)
+
+cat(
+  "Significant COVID19 vs OtherVirus:",
+  length(genes_COVID_OV),
+  "\n"
+)
+
+cat(
+  "Significant OtherVirus vs Healthy:",
+  length(genes_OV_H),
+  "\n"
+)
+
+shared_all_three <- Reduce(
+  intersect,
+  list(
+    genes_COVID_H,
+    genes_COVID_OV,
+    genes_OV_H
+  )
+)
+
+cat(
+  "Three-way shared significant DEGs:",
+  length(shared_all_three),
+  "\n"
+)
+```
+
+12.8 DEG overlap UpSet plot
+
+```{r}
+deg_sets <- list(
+  COVID19_vs_Healthy = genes_COVID_H,
+  COVID19_vs_OtherVirus = genes_COVID_OV,
+  OtherVirus_vs_Healthy = genes_OV_H
+)
+
+if (requireNamespace("UpSetR", quietly = TRUE)) {
+
+  upset_data <- UpSetR::fromList(
+    deg_sets
+  )
+
+  png(
+    "results/DEG_overlap_UpSet.png",
+    width = 2400,
+    height = 1800,
+    res = 300
+  )
+
+  UpSetR::upset(
+    upset_data,
+    sets = c(
+      "COVID19_vs_Healthy",
+      "COVID19_vs_OtherVirus",
+      "OtherVirus_vs_Healthy"
+    ),
+    order.by = "freq",
+    mainbar.y.label = "Number of shared significant DEGs",
+    sets.x.label = "Number of significant DEGs",
+    text.scale = 1.5
+  )
+
+  dev.off()
+
+} else {
+  message(
+    "UpSetR is not installed. DEG sets were created, but the UpSet plot was skipped."
+  )
+}
+```
+
+12.9 GO enrichment of three-way shared significant DEGs
+
+```{r}
+ego_three <- enrichGO(
+  gene = shared_all_three,
+  universe = unique(
+    covid_vs_healthy$results$gene
+  ),
+  OrgDb = org.Hs.eg.db,
+  keyType = "SYMBOL",
+  ont = "BP",
+  pAdjustMethod = "BH",
+  pvalueCutoff = 0.05,
+  qvalueCutoff = 0.05,
+  readable = TRUE
+)
+
+cat(
+  "Significant GO BP terms:",
+  nrow(as.data.frame(ego_three)),
+  "\n"
+)
+
+dotplot(
+  ego_three,
+  showCategory = 15,
+  title = "GO Biological Process: Three-way Shared DEGs"
+)
+```
+
+12.10 Define COVID-19-specific and OtherVirus-specific significant DEGs
+
+```{r}
+covid_specific <- setdiff(
+  genes_COVID_H,
+  union(
+    genes_COVID_OV,
+    genes_OV_H
+  )
+)
+
+other_specific <- setdiff(
+  genes_OV_H,
+  union(
+    genes_COVID_H,
+    genes_COVID_OV
+  )
+)
+
+cat(
+  "COVID19-specific significant DEGs:",
+  length(covid_specific),
+  "\n"
+)
+
+cat(
+  "OtherVirus-specific significant DEGs:",
+  length(other_specific),
+  "\n"
+)
+```
+
+12.11 GO enrichment of COVID-19-specific and OtherVirus-specific DEGs
+
+```{r}
+ego_covid_specific <- enrichGO(
+  gene = covid_specific,
+  universe = unique(
+    covid_vs_healthy$results$gene
+  ),
+  OrgDb = org.Hs.eg.db,
+  keyType = "SYMBOL",
+  ont = "BP",
+  pAdjustMethod = "BH",
+  pvalueCutoff = 0.05,
+  qvalueCutoff = 0.05,
+  readable = TRUE
+)
+
+ego_other <- enrichGO(
+  gene = other_specific,
+  universe = unique(
+    virus_vs_healthy$results$gene
+  ),
+  OrgDb = org.Hs.eg.db,
+  keyType = "SYMBOL",
+  ont = "BP",
+  pAdjustMethod = "BH",
+  pvalueCutoff = 0.05,
+  qvalueCutoff = 0.05,
+  readable = TRUE
+)
+
+cat(
+  "COVID19-specific GO BP terms:",
+  nrow(as.data.frame(ego_covid_specific)),
+  "\n"
+)
+
+cat(
+  "OtherVirus-specific GO BP terms:",
+  nrow(as.data.frame(ego_other)),
+  "\n"
+)
+
+write.csv(
+  as.data.frame(ego_covid_specific),
+  "results/enrichment/COVID19_specific_GO_BP.csv",
+  row.names = FALSE
+)
+
+write.csv(
+  as.data.frame(ego_other),
+  "results/enrichment/OtherVirus_specific_GO_BP.csv",
+  row.names = FALSE
+)
+```
+
+12.12 Plot COVID-19-specific and OtherVirus-specific GO results
+
+```{r}
+p_covid_GO <- dotplot(
+  ego_covid_specific,
+  showCategory = 10
+) +
+  ggtitle(
+    "GO Biological Process: COVID19-specific DEGs"
+  )
+
+p_other_GO <- dotplot(
+  ego_other,
+  showCategory = 10
+) +
+  ggtitle(
+    "GO Biological Process: OtherVirus-specific DEGs"
+  )
+
+p_covid_GO
+p_other_GO
+```
+
+12.13 Compare COVID-19-specific and OtherVirus-specific GO terms
+
+```{r}
+covid_GO <- as.data.frame(
+  ego_covid_specific
+) |>
+  filter(
+    !is.na(p.adjust)
+  ) |>
+  arrange(
+    p.adjust
+  ) |>
+  slice_head(
+    n = 10
+  ) |>
+  mutate(
+    Group = "COVID19-specific"
+  )
+
+other_GO <- as.data.frame(
+  ego_other
+) |>
+  filter(
+    !is.na(p.adjust)
+  ) |>
+  arrange(
+    p.adjust
+  ) |>
+  slice_head(
+    n = 10
+  ) |>
+  mutate(
+    Group = "OtherVirus-specific"
+  )
+
+GO_compare <- bind_rows(
+  covid_GO,
+  other_GO
+) |>
+  mutate(
+    GeneRatio_num = sapply(
+      strsplit(
+        as.character(GeneRatio),
+        "/"
+      ),
+      function(x) {
+        as.numeric(x[1]) /
+          as.numeric(x[2])
+      }
+    ),
+    Description_wrap = stringr::str_wrap(
+      Description,
+      width = 32
+    )
+  )
+
+head(GO_compare)
+```
+
+12.14 Plot GO Biological Process comparison
+
+```{r}
+p_GO_compare <- ggplot(
+  GO_compare,
+  aes(
+    x = GeneRatio_num,
+    y = reorder(
+      Description_wrap,
+      GeneRatio_num
+    ),
+    size = Count,
+    color = p.adjust
+  )
+) +
+  geom_point(
+    alpha = 0.85
+  ) +
+  facet_wrap(
+    ~ Group,
+    nrow = 1,
+    scales = "free"
+  ) +
+  scale_size_continuous(
+    name = "Gene Count",
+    range = c(3, 10)
+  ) +
+  scale_color_gradient(
+    name = "Adjusted p-value",
+    low = "#E64B35",
+    high = "#4C78A8"
+  ) +
+  labs(
+    title = "GO Biological Process Comparison",
+    x = "Gene Ratio",
+    y = NULL
+  ) +
+  theme_classic(
+    base_size = 14
+  ) +
+  theme(
+    plot.title = element_text(
+      size = 22,
+      face = "bold",
+      hjust = 0.5
+    ),
+    strip.text = element_text(
+      size = 14,
+      face = "bold"
+    ),
+    axis.text.y = element_text(
+      size = 9
+    )
+  )
+
+p_GO_compare
+
+ggsave(
+  "figures/enrichment/COVID19_vs_OtherVirus_GO_comparison.png",
+  p_GO_compare,
+  width = 15,
+  height = 10,
+  dpi = 300
+)
+```
+
+12.15 Prepare a COVID-19-associated signature for drug repurposing
+
+```{r}
+drug_signature <- covid_associated_genes |>
+  filter(
+    sign(covid_healthy_log2FC) ==
+      sign(covid_virus_log2FC)
+  ) |>
+  mutate(
+    direction = if_else(
+      covid_virus_log2FC > 0,
+      "Up",
+      "Down"
+    )
+  )
+
+table(
+  drug_signature$direction
+)
+
+top_up <- drug_signature |>
+  filter(
+    direction == "Up"
+  ) |>
+  arrange(
+    covid_virus_padj
+  ) |>
+  slice_head(
+    n = 100
+  )
+
+top_down <- drug_signature |>
+  filter(
+    direction == "Down"
+  ) |>
+  arrange(
+    covid_virus_padj
+  ) |>
+  slice_head(
+    n = 100
+  )
+
+cat(
+  "Top upregulated genes:",
+  nrow(top_up),
+  "\n"
+)
+
+cat(
+  "Top downregulated genes:",
+  nrow(top_down),
+  "\n"
+)
+```
+
+12.16 Save drug-repurposing input signatures
+
+```{r}
+write.table(
+  top_up$gene,
+  "results/signatures/COVID19_Top100_UP.txt",
+  row.names = FALSE,
+  col.names = FALSE,
+  quote = FALSE
+)
+
+write.table(
+  top_down$gene,
+  "results/signatures/COVID19_Top100_DOWN.txt",
+  row.names = FALSE,
+  col.names = FALSE,
+  quote = FALSE
+)
+
+file.exists(
+  "results/signatures/COVID19_Top100_UP.txt"
+)
+
+file.exists(
+  "results/signatures/COVID19_Top100_DOWN.txt"
+)
 ```
