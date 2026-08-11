@@ -1,0 +1,4 @@
+"comparison","tested_genes","significant_genes","upregulated","downregulated"
+"COVID-19 vs Healthy",15648,1769,987,782
+"Other Virus vs Healthy",12735,9256,90,9166
+"COVID-19 vs Other Virus",15966,1558,690,868
